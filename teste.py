@@ -3,70 +3,78 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 
-def run(episodes, is_training=True, render=False):
+def executar(episodios, em_treinamento=True, renderizar=False):
+    # Inicializa o ambiente 'Taxi-v3'
+    ambiente = gym.make('Taxi-v3', render_mode='human' if renderizar else None)
 
-    env = gym.make('Taxi-v3', render_mode='human' if render else None)
-
-    if(is_training):
-        q = np.zeros((env.observation_space.n, env.action_space.n)) # init a 500 x 6 array
+    # Inicializa a matriz Q
+    if em_treinamento:
+        q = np.zeros((ambiente.observation_space.n, ambiente.action_space.n))  # Matriz 500 x 6
     else:
-        f = open('taxi.pkl', 'rb')
-        q = pickle.load(f)
-        f.close()
+        with open('taxi.pkl', 'rb') as arquivo:
+            q = pickle.load(arquivo)
 
-    learning_rate_a = 0.9 # alpha or learning rate
-    discount_factor_g = 0.9 # gamma or discount rate. Near 0: more weight/reward placed on immediate state. Near 1: more on future state.
-    epsilon = 1         # 1 = 100% random actions
-    epsilon_decay_rate = 0.0001        # epsilon decay rate. 1/0.0001 = 10,000
-    rng = np.random.default_rng()   # random number generator
+    taxa_aprendizado = 0.9  # Taxa de aprendizado (alpha)
+    fator_desconto = 0.9  # Fator de desconto (gamma)
+    epsilon = 1  # Probabilidade inicial de ações aleatórias (exploração)
+    taxa_decrescimento_epsilon = 0.0001  # Taxa de decaimento do epsilon
+    rng = np.random.default_rng()  # Gerador de números aleatórios
 
-    rewards_per_episode = np.zeros(episodes)
+    recompensas_por_episodio = np.zeros(episodios)
 
-    for i in range(episodes):
-        state = env.reset()[0]  # states: 0 to 63, 0=top left corner,63=bottom right corner
-        terminated = False      # True when fall in hole or reached goal
-        truncated = False       # True when actions > 200
+    for i in range(episodios):
+        estado = ambiente.reset()[0]  # Reseta o ambiente e obtém o estado inicial
+        terminado = False  # Indica se o episódio terminou
+        truncado = False  # Indica se o episódio foi truncado (limite de passos)
+        recompensa_total = 0
 
-        rewards = 0
-        while(not terminated and not truncated):
-            if is_training and rng.random() < epsilon:
-                action = env.action_space.sample() # actions: 0=left,1=down,2=right,3=up
+        while not terminado and not truncado:
+            # Escolha da ação: exploração ou exploração
+            if em_treinamento and rng.random() < epsilon:
+                acao = ambiente.action_space.sample()  # Ação aleatória
             else:
-                action = np.argmax(q[state,:])
+                acao = np.argmax(q[estado, :])  # Ação baseada na matriz Q
 
-            new_state,reward,terminated,truncated,_ = env.step(action)
+            # Executa a ação no ambiente
+            novo_estado, recompensa, terminado, truncado, _ = ambiente.step(acao)
+            recompensa_total += recompensa
 
-            rewards += reward
-
-            if is_training:
-                q[state,action] = q[state,action] + learning_rate_a * (
-                    reward + discount_factor_g * np.max(q[new_state,:]) - q[state,action]
+            # Atualiza a matriz Q durante o treinamento
+            if em_treinamento:
+                q[estado, acao] = q[estado, acao] + taxa_aprendizado * (
+                    recompensa + fator_desconto * np.max(q[novo_estado, :]) - q[estado, acao]
                 )
 
-            state = new_state
+            estado = novo_estado
 
-        epsilon = max(epsilon - epsilon_decay_rate, 0)
+        # Decaimento do epsilon para reduzir ações aleatórias ao longo do tempo
+        epsilon = max(epsilon - taxa_decrescimento_epsilon, 0)
 
-        if(epsilon==0):
-            learning_rate_a = 0.0001
+        # Ajusta a taxa de aprendizado quando epsilon chega a zero
+        if epsilon == 0:
+            taxa_aprendizado = 0.0001
 
+        recompensas_por_episodio[i] = recompensa_total
 
-        rewards_per_episode[i] = rewards
+    ambiente.close()
 
-    env.close()
-
-    sum_rewards = np.zeros(episodes)
-    for t in range(episodes):
-        sum_rewards[t] = np.sum(rewards_per_episode[max(0, t-100):(t+1)])
-    plt.plot(sum_rewards)
+    # Plota a soma das recompensas por episódio
+    soma_recompensas = np.zeros(episodios)
+    for t in range(episodios):
+        soma_recompensas[t] = np.sum(recompensas_por_episodio[max(0, t-100):(t+1)])
+    plt.plot(soma_recompensas)
+    plt.xlabel('Episódios')
+    plt.ylabel('Soma das Recompensas (média dos últimos 100 episódios)')
     plt.savefig('taxi.png')
 
-    if is_training:
-        f = open("taxi.pkl","wb")
-        pickle.dump(q, f)
-        f.close()
+    # Salva a matriz Q em um arquivo para uso futuro
+    if em_treinamento:
+        with open("taxi.pkl", "wb") as arquivo:
+            pickle.dump(q, arquivo)
 
 if __name__ == '__main__':
-    run(15000)
+    # Treina o agente com 15.000 episódios
+    executar(15000)
 
-    run(10, is_training=False, render=True)
+    # Avalia o agente treinado em 10 episódios com renderização
+    executar(10, em_treinamento=False, renderizar=True)
